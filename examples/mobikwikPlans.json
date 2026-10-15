@@ -1,0 +1,72 @@
+[
+  {
+    "operatorId": 3,
+    "circleId": 13,
+    "id": "1424623",
+    "planCode": "bsnl-Maharashtra-Goa-local-plans-Rs-169.0",
+    "amount": 169.0,
+    "planName": "Voice + 2G Data",
+    "planDescription": "Unlimited voice Local/STD calls any net ,100 SMS/Day incl Na",
+    "validity": "30 days",
+    "validityInDays": 30,
+    "dataBenefit": "2GB/day",
+    "planType": 17,
+    "isHidden": 0
+  },
+  {
+    "operatorId": 3,
+    "circleId": 13,
+    "id": "1446281",
+    "planCode": "bsnl-Maharashtra-Goa-local-plans-Rs-169.0",
+    "amount": 169.0,
+    "planName": "Voice + 2G Data",
+    "planDescription": "Unlimited voice Local/STD calls any net ,100 SMS/Day incl Na",
+    "validity": "30 days",
+    "validityInDays": 30,
+    "dataBenefit": "2GB/day",
+    "planType": 17,
+    "isHidden": 0
+  },
+  {
+    "operatorId": 3,
+    "circleId": 22,
+    "id": "1115777",
+    "planCode": "bsnl-UP-WEST-Uttarakhand-full-talktime-plans-Rs-",
+    "amount": 220.0,
+    "planName": "Voice Tariff",
+    "planDescription": "Full Talk value offer equal to Rs.220",
+    "validity": "NA days",
+    "validityInDays": -1,
+    "dataBenefit": null,
+    "planType": 2,
+    "isHidden": 0
+  },
+  {
+    "operatorId": 3,
+    "circleId": 22,
+    "id": "1115781",
+    "planCode": "bsnl-UP-WEST-Uttarakhand-full-talktime-plans-Rs-",
+    "amount": 500.0,
+    "planName": "Voice Tariff",
+    "planDescription": "Full Talk value offer equal to Rs.500",
+    "validity": "NA days",
+    "validityInDays": -1,
+    "dataBenefit": null,
+    "planType": 2,
+    "isHidden": 0
+  },
+  {
+    "operatorId": 140,
+    "circleId": 15,
+    "id": "6ac886a4e4b09f45826845ff",
+    "planCode": "1019241",
+    "amount": 198.0,
+    "planName": "Voice + 4G Data",
+    "planDescription": "True 5G Unlimited data |\nData: Unlimited 5G + 2 GB/day |\nVoi",
+    "validity": "14 days",
+    "validityInDays": 14,
+    "dataBenefit": "Unlimited 5G + 2 GB/day",
+    "planType": 42,
+    "isHidden": 0
+  }
+]
