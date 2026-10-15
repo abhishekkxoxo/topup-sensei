@@ -27,8 +27,9 @@ Before any feasibility verdict it asks for **staging credentials** and runs **ev
 | `tests/vendors/{vendorName}.*.test.ts` + fixtures | Created |
 | `src/configs/vendorConfigs/{VendorName}.json` | Created locally with staging values (gitignored) |
 | `karma_reports` balance module | Only if the vendor has a balance endpoint |
+| karma: `config.php.sample`, `vendor_tables.php`, `sale/{slug}_topup_voucher` listing page (controller, model, language, tpl), `header.tpl`, `product_automation.tpl`, `order_list.tpl` if there is a balance | Created/updated (Phase 3C) |
 
-Everything else (OPMS config, karma, DB tables/rows, product-listing data, plumAuth) comes as an ordered handoff checklist.
+Everything else comes as an ordered handoff checklist: OPMS config, the real karma `config.php` per env, permissions, DB tables/rows, product-listing data and plumAuth. Shared karma bugs, such as `addProduct` dropping `parent_product_id`, are proposed with exact fixes, never changed without approval.
 
 ## Installation
 

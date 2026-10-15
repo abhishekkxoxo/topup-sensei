@@ -223,7 +223,9 @@ WHAT GETS WRITTEN (vendor-integrations)
 • tests/vendors/{vendorName}.*.test.ts + tests/vendors/fixtures/{vendorName}*.json  [NEW]
 {• karma_reports/vendorBalance/vendors/{vendorName}Balance.js + vendorBalance.js + conf.json.sample}
 
-CROSS-REPO CHECKLIST (handoff, not written by me unless asked): OPMS config, karma, DB, product-listing data
+WHAT GETS WRITTEN (karma, Phase 3C): config.php.sample, vendor_tables.php, sale/{slug}_topup_voucher controller/model/language/tpl,
+  product_automation.tpl, header.tpl {+ order_list.tpl balance row}
+CROSS-REPO CHECKLIST (handoff): OPMS config, real karma config.php per env, permissions, DB, product-listing data
 LIVE STAGING RUN  {n}/{n} requests · {x}/{y} assertions passed · unverified: {list or none}
 COMPLEXITY  Low / Medium / High        RISKS  {list}
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -263,6 +265,109 @@ Before writing, re-read on the current branch: `vendorBaseClass.ts`, `vendorBatc
 
 `karma_reports/vendorBalance/vendors/{vendorName}Balance.js` exporting `get{VendorName}Balance` (pattern: `mobikwikBalance.js` for token+envelope, `dtoneBalance.js` for API key). Return `{ balance: "CUR amount", vendorData: [{ currencyCode, vendorId, balanceAmount }] }` — `vendorBalance.js` on `dev` reads `results[N]?.balance`, so a plain string shows as a blank cell (older branches read the string; check the branch). Never throw: log and return `{ balance: "N/A" }`. Register in `vendorBalance.js` **positionally**: require, `let {key}_balance`, **append** to `vendorFunctions`, `{key}_balance = results[<new last index>]`, return key — then count that `vendorFunctions.length` equals the number of `results[...]` reads. Add the `conf.json.sample` block with placeholders; cert paths resolve from the repo root, while the Docker image puts certs in `src/configs/certs/` — use that path. Note `conf.json.sample` is currently not valid JSON (missing comma near the `razorpay` block): edit carefully and validate with `node -e "JSON.parse(...)"` on a copy.
 
+### PHASE 3C — karma admin (always)
+
+You make the karma edits yourself. karma is PHP (OpenCart). Repo `karma`, app root `karma/` inside it. It has no tests, linter, CI or CLAUDE.md. Production PHP is unconfirmed: likely 5.x, since it uses `mysql_connect`, `each()` and `create_function()`. Before editing:
+- Branch from `origin/dev`: `STO-<ticket>-<slug>-dev`. Sibling `-uat`, `-stagingV1` and `-canvas` branches get one PR each.
+- Re-read the Mobikwik files on dev. Mobikwik was added in dev PR #2571, with the schema fix in #2609; the uat/stagingV1 SHAs differ.
+- **Insert by content anchor, never by line number.** Branches differ by hundreds of lines.
+
+**Inputs**
+
+| Name | Example |
+|---|---|
+| `{CONST}` | `ACME_TOPUP_VENDOR_ID` |
+| `{id}` | the vendor id for this branch's environment |
+| `{slug}` | `acme`, lowercase |
+| `{Camel}` | `Acme`, letters only |
+| `{Label}` | display name |
+| `{table}` | the vendor-integrations table |
+| `{currency}` | the vendor's currency |
+
+**Pre-checks**
+- Run `SHOW COLUMNS FROM {table}`.
+  - A `vendor_id` column (written only when `multiVendorSupport` is set) means variant **(a)**: clone Mobikwik.
+  - No `vendor_id` column means variant **(b)**: Ding-style, with no vendor filter.
+  - Note whether `operator_name` and `last_updated` exist.
+- Run `git show origin/dev:karma/config.php.sample | grep -nE "[ ,]{id}\)"`. It must return nothing: duplicate integer keys in PHP arrays silently overwrite each other.
+- **Fixed-SKU topup vendor → STOP and escalate.** These also need `FIXED_SKU_VENDORS`, `getFixedSkusTable`, `getRequestKeyMap` and product-form SKU rows.
+
+**Edits** (8 files, the same set Mobikwik needed)
+
+1. **`karma/config.php.sample`.** After `define('MOBIKWIK_TOPUP_VENDOR_ID', …);`, add `define('{CONST}', {id});`.
+2. **`karma/model/schema/vendor_tables.php` `getVendorSchema()`.** After the closing `),` of the `MOBIKWIK_TOPUP_VENDOR_ID => array (` entry, add:
+   ```php
+               {CONST} => array (
+               "table" => "{table}",
+               "columns" => array (
+                 "productName" => "name", "productSku" => "sku", "minPrice" => "min_price", "maxPrice" => "max_price",
+                 "productDenominations" => "denominations", "productDescription" => "description",
+                 "productTnC" => "terms_conditions", "productHowToUse" => "how_to_use", "priceType" => "",
+                 "is_variable" => "is_variable", "currency_code" => "currency", 'productImage' => "image",
+                 "country" => "country", "productDiscount" => ""
+               )
+               ),
+   ```
+   - Every value must appear in `SHOW COLUMNS`. Never copy column names from a sibling entry: wrong names silently become NULL, and an empty currency means category 454 and no filters.
+   - With `currency_code` → `currency`, no `getVendorDefaultValues`/`getCurrencyColumn` entry is needed.
+3. **New `karma/controller/sale/{slug}_topup_voucher.php`.** Clone `controller/sale/mobikwik_topup_voucher.php` and run:
+   ```
+   sed -e 's/mobikwik/{slug}/g' -e 's/Mobikwik/{Camel}/g' -e 's/MOBIKWIK_TOPUP_VENDOR_ID/{CONST}/g'
+   ```
+   - Fix the `(INR)` label if the currency differs.
+   - Variant (b): drop the vendor dropdown array and the `vendor_id` read; call `get{Camel}TopupProducts($page)`; pass `{CONST}` as the third argument of `getVendorProducts(...)`; remove `&vendor_id=` from the pagination URL.
+4. **New `karma/model/sale/{slug}_topup_voucher.php`.**
+   - (a): clone Mobikwik's model with the same renames, and set the table to `{table}`.
+   - (b): a `get{Camel}TopupProducts($page)` that does COUNT + `SELECT * … ORDER BY id DESC LIMIT`, plus `bulkDownloadProductData()`, as in `model/sale/dingtopup_voucher.php`.
+5. **New `karma/language/english/sale/{slug}_topup_voucher.php`.** Clone it and set `heading_title` to `'{Label} Topup Products'`. Drop `column_operator_name` if there is no such column.
+6. **New `karma/view/template/sale/{slug}_topup_products.tpl`.** Clone `mobikwik_topup_products.tpl` with the same sed.
+   - Delete the `last_updated`/`operator_name` `<th>`/`<td>` pairs if those columns are missing.
+   - Variant (b): remove the `#vendor_id` select and its JS.
+7. **`karma/view/template/catalog/product_automation.tpl` `getRoutes()`.** After the Mobikwik line, add:
+   - (a): `  "<?php echo {CONST}; ?>" : "sale/{slug}_topup_voucher&vendor_id=<?php echo {CONST}; ?>",`
+   - (b): `"sale/{slug}_topup_voucher",`
+8. **`karma/view/template/common/header.tpl` "Topup Vendors" menu.** After the `Mobikwik Topup` `<li>`, add:
+   ```php
+                   <li><a href="<?php echo $this->url->link('sale/{slug}_topup_voucher', 'token=' . $this->session->data['token'] , 'SSL'); ?>">{Label} Topup</a></li>
+   ```
+9. **`karma/view/template/sale/order_list.tpl`**, only if Phase 3B produced `{balance_key}`.
+   - Before `<?php foreach(unserialize(QC_BALANCE) as $qc_vendor) { ?>`, add a **complete** row: `<tr><td><b>{Label} Balance:</b></td><td name="{balance_key}" id="{balance_key}"></td></tr>`. The blackhawk, chile and peru neighbours lack `<tr>`, so don't copy their shape.
+   - In the `#vendor_payment_details` AJAX success handler, after the `reloadly_GBP_balance` setter, add `$('#{balance_key}').text(result['result'].{balance_key});`.
+   - Mobikwik's `mobikwik_balance` row is still missing on dev; mention it.
+   - Menu links use `'SSL'`, not `'\SSL'`: Mobikwik's header line has that typo, so don't copy it.
+
+**Verify**
+- PHP isn't installed locally, so lint every changed file in Docker, covering both the likely production version and PHP 8:
+  ```bash
+  for v in 5.6 8.2; do docker run --rm -v "$PWD":/app -w /app php:$v-cli sh -c 'for f in <changed files>; do php -l "$f"; done'; done
+  ```
+  - `.tpl` files lint too.
+  - `config.php.sample` already fails `php -l` before your change, because some existing defines lack a `;`. Lint it before and after and compare the errors; don't fix unrelated lines.
+- `grep -rin mobikwik` on the 4 new files must return nothing.
+- `{CONST}` must appear exactly once each in `config.php.sample`, `vendor_tables.php` and `product_automation.tpl`.
+- `git diff --stat` must show only the files above.
+
+**Not done by you, but listed in the handoff and the PR description**
+- **The real `karma/config.php` define**, in **every** environment, **before the code deploys**. The file is gitignored. On PHP 8 a missing constant is a fatal error in `getVendorSchema` and `header.tpl`, which breaks every admin page.
+- **The user-group permission.** Go to Admin → System → Users → User Groups and tick `sale/{slug}_topup_voucher` for Access and Modify. The value is PHP-`serialize`d, not JSON: never `REPLACE()` it in SQL.
+- **DB rows:** `vendor`, `product_api_model_names`, `vendor_to_model`.
+
+**Shared-code gaps (still on dev). Propose these; apply only with explicit approval, in a separate PR.**
+- **G1. Automation never sets `parent_product_id`.** This needs a parent-design decision first (one dummy parent per operator via `product_to_operator`).
+- **G2. `addProduct` drops a supplied parent** (`model/catalog/product.php`, the `if (!isset($data['parent_product_id'])…` block). One-line fix:
+  ```php
+  $parent_product_id = (isset($data['parent_product_id']) && $data['parent_product_id']) ? (int)$data['parent_product_id'] : 0;
+  ```
+- **G3. `mapFilters` never tags the topup group or plan type.** Gate it per vendor and resolve the group by name, since ids differ per environment. Plan type also needs `categories` exposed by `getProductDetails`.
+- **G4. `insertProductFilter` has no dedupe.** Add a `SELECT 1 … LIMIT 1` guard, not `INSERT IGNORE`; a unique key isn't confirmed.
+
+**Smoke test (dev)**
+1. The header shows **Topup Vendors → {Label} Topup**.
+2. The listing page loads with rows, pagination, filter and bulk download, and there are no "Undefined index" warnings.
+3. **Create** gives "Product Created Successfully!".
+4. Check the new product in SQL: `currency_code` is not empty and `status=0`, and `product_filter` has country and voucher-category rows (plus circle for `op_cir_x` skus).
+5. Open the product form and save it. Expect no "Product details not found" and no "Currency mismatch".
+
 ### PHASE 4 — Test (always; vendor API first, then ours)
 
 Run `## MODE: TEST` below. Do not hand off until both steps pass or every failure is explained.
@@ -289,23 +394,21 @@ DB (central)
  5. POST /vendor/sync_products {vendorId}. Expect OPM00055 "vendor products not integrated" on the first run
     (no products yet) — the vendor table is still filled. Check vendor_product_sync_status + row count.
 karma
- 6. define('{CONST}_VENDOR_ID', <env id>) in EVERY env's config.php (+ sample).
- 7. getVendorSchema entry (model/schema/vendor_tables.php) — column names from SHOW COLUMNS, not a sibling vendor.
- 8. Listing page: clone controller/model/language/tpl of sale/mobikwik_topup_voucher, header.tpl menu,
-    product_automation.tpl getRoutes().
- 9. Create products (automation UI; or a local bulk script if you have one — dry run first). Automation creates
+ 6. karma code: written by me in Phase 3C (PR per branch). YOU: define('{CONST}', <env id>) in EVERY env's real
+    config.php BEFORE deploying (PHP 8 fatals without it); tick sale/{slug}_topup_voucher in User Groups.
+ 7. Create products (automation UI; or a local bulk script if you have one — dry run first). Automation creates
     status=0 and NO parent: set parent_product_id (addProduct drops it — set via edit or UPDATE ... AND is_dummy_product=0),
     tag topup group + plan type + country (+ circle_<id>), enable, then RE-SAVE in karma to index.
-10. product_to_operator: DTOne operator ids → dummy parents (seed by SQL, per env; canvas data is authoritative).
+ 8. product_to_operator: DTOne operator ids → dummy parents (seed by SQL, per env; canvas data is authoritative).
 OPMS (config_voucher_process.json)
-11. vendorIntegration.integratedVendors += "{vendorId}" (STRING), vendorIdsWithName, a slow
+ 9. vendorIntegration.integratedVendors += "{vendorId}" (STRING), vendorIdsWithName, a slow
     vendorRetryPolicies["{vendorId}"] ladder for async recharges, topupVendorsPinSMS if codes can be PINs
     (else make sure no generic voucher SMS goes out), topupFilterGroupId present.
 Clients
-12. plum_client_order realtimeVendorModels += ",{model}" if API clients sell it.
-13. plumAuth site topup.countries includes the country; campaign enables PARENT ids.
+10. plum_client_order realtimeVendorModels += ",{model}" if API clients sell it.
+11. plumAuth site topup.countries includes the country; campaign enables PARENT ids.
 Verify
-14. validateRecharge → procure (staging number) → voucher_insert_details + egift_voucher_details rows →
+12. validateRecharge → procure (staging number) → voucher_insert_details + egift_voucher_details rows →
     force a pending → /vendor/refetch_voucher {vendorId, referenceIds:[vid]} → storefront plan list per operator.
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ```
