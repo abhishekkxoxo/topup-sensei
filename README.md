@@ -8,6 +8,8 @@ A Claude Code slash command for mobile topup (prepaid recharge) vendors on the X
 | **Debug** | Trace a topup problem across storefront, product-listing, order-process-ms, vendor-integrations, karma and karma_reports (stuck pending, double recharge, no plans, operator not detected, sync disabled products…) |
 | **Test** | Vendor API contract tests with the Postman CLI first, then Jest unit tests of our connector using the captured responses |
 
+Before any feasibility verdict it asks for **staging credentials** and runs **every vendor API** live with the Postman CLI. It only calls an integration 100% feasible when every endpoint passed. It writes the vendor config into the repo with the staging URL and credentials. That file is gitignored, so it stays local; you swap in production values. If the vendor has a balance endpoint, it also writes the karma_reports balance module.
+
 ## What it knows
 
 - The full topup flow: DTOne operator detection → `product_to_operator` → dummy operator parents → plan list in Elasticsearch → order → OPMS vendor selection → VI procure → retries, refetch, recon, refund.
@@ -23,7 +25,7 @@ A Claude Code slash command for mobile topup (prepaid recharge) vendors on the X
 | `src/vendors/vendorTemplates/{vendorName}.ts` | Created |
 | `src/configs/baseConfigs.json.sample` | Updated (`vendorClassIdMapping`, no secrets) |
 | `tests/vendors/{vendorName}.*.test.ts` + fixtures | Created |
-| `src/configs/vendorConfigs/{VendorName}.json` | Created locally (gitignored, delivered per env) |
+| `src/configs/vendorConfigs/{VendorName}.json` | Created locally with staging values (gitignored) |
 | `karma_reports` balance module | Only if the vendor has a balance endpoint |
 
 Everything else (OPMS config, karma, DB tables/rows, product-listing data, plumAuth) comes as an ordered handoff checklist.

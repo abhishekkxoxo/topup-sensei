@@ -185,6 +185,19 @@ Show what you pre-filled; ask the user to confirm or correct.
 6. PII rules: can we log the phone number? (Default: mask.)
 ```
 
+### PHASE 1.5 — Live API check on staging (before any feasibility verdict)
+
+```
+Before I call this feasible I'll run every vendor API on staging.
+Please share the staging credentials and test data (test mobile numbers per operator, plans, sandbox float).
+```
+- Keep the credentials out of chat replies, code, tracked files, commits and logs. Put them only in a Postman environment file in the scratchpad (outside every repo) and, in Phase 3, in the local gitignored vendor config.
+- Build a Postman collection from the docs and run it: `postman collection run <collection.json> -e <env.json> [-d <data.json>]`. Cover **every endpoint the integration will call**: auth/token, plan list (every operator × region), pre-flight validation, payment (smallest plan), status by our reference, duplicate reference, insufficient float if the sandbox allows, plus error cases (bad credentials, invalid input, duplicate reference) and the **balance endpoint if one exists**. Staging only — never production.
+- Save the redacted responses as fixtures (TEST step 2 uses them).
+- Show a results table: endpoint · HTTP status · pass/fail · what the response revealed (field names, status values, quirks). Correct any Phase 1 answer the live responses contradict.
+
+**Verdict rule:** a feasibility line is ✅ only if its API passed live on staging. Not run or blocked → ⚠️ "not verified: <reason>". Failed → ❌. Say **"100% feasible"** only when every line is ✅ from the live run; otherwise list exactly what is unverified and why.
+
 ### PHASE 2 — Feasibility check
 
 ```
@@ -211,6 +224,7 @@ WHAT GETS WRITTEN (vendor-integrations)
 {• karma_reports/vendorBalance/vendors/{vendorName}Balance.js + vendorBalance.js + conf.json.sample}
 
 CROSS-REPO CHECKLIST (handoff, not written by me unless asked): OPMS config, karma, DB, product-listing data
+LIVE STAGING RUN  {n}/{n} requests · {x}/{y} assertions passed · unverified: {list or none}
 COMPLEXITY  Low / Medium / High        RISKS  {list}
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 Shall I proceed? (yes / no / clarify X)
@@ -238,7 +252,10 @@ Before writing, re-read on the current branch: `vendorBaseClass.ts`, `vendorBatc
 - Certificates: read from `this.config.certificatePath` (per env), never a hardcoded per-env filename (Mobikwik canvas reads `MobikwikTopupCanvas.pem` while the file is `MobikwikTopup.pem` — that bug broke every encrypted call locally).
 
 **File 3 — config**
-- `src/configs/vendorConfigs/{VendorName}.json` keyed by vendor id (string), `vendorData.vendorId` equal to the key, `vendorData.vendorType` (not `type` — the sample file is wrong), no `null` values in `vendorData`, `configs.baseUrl/maxApiAtaTime/maxCardsPerRequest` required (`vendorFactory.ts validateVendorConfigs`), `maxCardsPerRequest: 1`, `useBatchImport: true`, `vendorTableMapping.table = "{model}_products"`, `extraInfo: true` if payment/validation needs row attributes. Credentials as `"FILL_FROM_SECURE_CONFIG"` placeholders.
+- `src/configs/vendorConfigs/{VendorName}.json` keyed by vendor id (string), `vendorData.vendorId` equal to the key, `vendorData.vendorType` (not `type` — the sample file is wrong), no `null` values in `vendorData`, `configs.baseUrl/maxApiAtaTime/maxCardsPerRequest` required (`vendorFactory.ts validateVendorConfigs`), `maxCardsPerRequest: 1`, `useBatchImport: true`, `vendorTableMapping.table = "{model}_products"`, `extraInfo: true` if payment/validation needs row attributes.
+
+**Config values:** write the **staging** base URL and the **staging credentials** the user shared into `src/configs/vendorConfigs/{VendorName}.json` in the repo working tree. The folder is gitignored, so the file stays local and is never committed — tell the user to swap in production values per env (devx). Everywhere tracked (`*.sample`, code, tests, fixtures) use placeholders only. Confirm with `git status` that the config file is not staged.
+
 - `vendorClassIdMapping`: `"{ClassName}": ["{vendorId}"]` in `baseConfigs.json.sample` (tracked, no secrets) and the local `baseConfigs.json`; then `npm run merge-configs` and restart (config is imported at load time).
 - Verify the mapping id equals the vendor config key (Mobikwik locally: mapping `2476` vs config `2459` ⇒ `Unknown vendor ID` / `VendorConfig cannot be empty`).
 
@@ -261,7 +278,7 @@ TESTS:   vendor API {n}/{n} assertions · unit {n}/{n}
 
 NEXT STEPS (in order)
 VI
- 1. Fill credentials + cert per env (devx). merge-configs, restart.
+ 1. Replace the staging credentials/baseUrl in vendorConfigs with production + cert per env (devx). merge-configs, restart.
  2. Token vendors: POST /vendor/updateAccessToken {vendorId} ONCE from the cron, never per pod.
 DB (central)
  3. CREATE TABLE {model}_products: id, sku VARCHAR(200) indexed, name, image, denominations, is_variable,
@@ -300,6 +317,8 @@ Verify
 Two steps, always in this order. Step 1 proves the vendor behaves as documented; step 2 proves our code handles what the vendor actually returns. Fixtures for step 2 come from step 1.
 
 ### Step 1 — Vendor API contract tests (Postman CLI)
+
+In ONBOARD this collection already ran in Phase 1.5 — re-run it after the code is written and add any endpoint the code ended up calling.
 
 The Postman CLI is `postman` (`postman collection run <collection.json> [-e env.json] [-d data.json]`). Build `tests/postman/{vendorName}.postman_collection.json` (or a scratch dir if the user doesn't want it in the repo) from the docs. Secrets go in an environment file passed with `-e` that is **never committed**.
 
@@ -422,7 +441,9 @@ PREVENT      {test to add (MODE: TEST), alert, config guard}
 
 1. Feasibility approval and branch confirmation before any code. One question batch at a time.
 2. Never edit base classes (`vendorBaseClass.ts`, `vendorBatchSyncClass.ts`, `vendorAuthentication.ts`), service files (`server.ts`, `routes.ts`, controllers, providers, `helper.ts`, `db.ts`, `productHelper.ts`, `vendorQueries.ts`), `integratedVendors/index.ts`, or other vendors' files/configs. If a shared bug blocks you, report it and propose a separate PR.
-3. Never write secrets: placeholders in config, credentials only via `this.config.configs.credentials`, real values via devx. Never print tokens, keys, cert contents or full phone numbers.
+3. Credentials never in code, tracked files, commits or chat: staging values only in the local gitignored vendor config and the scratchpad Postman environment; placeholders in `*.sample`; read via `this.config.configs.credentials`. Never print tokens, keys, cert contents or full phone numbers.
+10. Never say "100% feasible" without a passing live staging run of every endpoint (payment on staging only).
+11. If the vendor has a balance endpoint, write the karma_reports module (Phase 3B).
 4. Never free `reuse` unless the vendor proves nothing was booked. Pending is never a generic failure.
 5. sku: stable, unique on the vendor's payment identity, deduped, separator-safe, fits the column. Any sku-format change ships with an `api_product_name` remap plan (back up, remap, verify, sync immediately, verify).
 6. Plan fetch fails loudly. Never let a sync publish an empty catalog.
